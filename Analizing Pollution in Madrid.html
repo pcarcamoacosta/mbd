@@ -1,0 +1,249 @@
+  * PART I – LOADING LIBRARIES
+
+  * PART II – READING 72 DATA FILES
+
+  * PART III – MERGING EVERYTHING
+
+  * PART IV – ANALYSIS
+
+  * PART IV – REGRESSION
+
+
+  Analizing Pollution in Madrid
+
+
+      Mohammed Al Yousef | Jad Bechara | Patricia Carcamo Acosta |
+      Blanca Fernandez Cuesta | Ting Lun Fan | Lenny Tahon
+
+
+------------------------------------------------------------------------
+
+
+    PART I – LOADING LIBRARIES
+
+|library(data.table)
+library(readxl)
+library(lubridate)
+library(ggplot2)
+library(corrplot)
+library(gridExtra)
+library(GGally)|
+
+
+------------------------------------------------------------------------
+
+
+    PART II – READING 72 DATA FILES
+
+File names:
+
+|head(list.files('../Desktop/workgroup data/'))|
+
+|## [1] "hourly_data_11_1.csv"  "hourly_data_11_10.csv" "hourly_data_11_11.csv"
+## [4] "hourly_data_11_12.csv" "hourly_data_11_2.csv"  "hourly_data_11_3.csv"|
+
+
+File Structure:
+
+|head(read.csv('../Desktop/workgroup data/hourly_data_11_1.csv'))|
+
+ABCDEFGHIJ0123456789
+
+ 
+ 
+	
+day
+<int>
+	
+hour
+<int>
+	
+station
+<int>
+	
+parameter
+<int>
+	
+value
+<dbl>
+1	1	1	28079004	1	6
+2	1	1	28079008	1	12
+3	1	1	28079017	1	12
+4	1	1	28079018	1	10
+5	1	1	28079024	1	7
+6	1	1	28079035	1	11
+
+6 rows
+
+
+Automated reading:
+
+|for (filename in list.files('../Desktop/workgroup data/'))
+{
+  df_loaded<-data.table::fread(paste0('../Desktop/workgroup data/',filename))
+  
+  df_loaded<-df_loaded[df_loaded$parameter %in% c(8,1,14,9),]
+  
+  df_loaded<-aggregate(df_loaded$value, FUN=mean, 
+                       by=list(day=df_loaded$day, parameter=df_loaded$parameter))
+  
+  year=paste0('20',substr(filename, 13, 14))
+  month=substr(filename,16,nchar(filename)-4)
+  df_loaded$day<-as_date(paste(year,month,df_loaded$day,sep = '-'))
+  
+  if (!'df_daily' %in% ls()){df_daily<-df_loaded}
+  else {df_daily<-rbind(df_daily, df_loaded)}
+}|
+
+
+Finally, transforming parameters to a readable text
+
+|df_daily$parameter <- factor(ifelse(df_daily$parameter==8,  'NO2',
+                             ifelse(df_daily$parameter==1,  'SO2',
+                             ifelse(df_daily$parameter==14, 'O3',
+                                                            'PM2.5'))))
+
+head(df_daily)|
+
+ABCDEFGHIJ0123456789
+
+ 
+ 
+	
+day
+<date>
+	
+parameter
+<fctr>
+	
+x
+<dbl>
+	
+1	2011-01-01	SO2	10.712500	
+2	2011-01-02	SO2	11.933333	
+3	2011-01-03	SO2	11.912134	
+4	2011-01-04	SO2	8.841667	
+5	2011-01-05	SO2	9.508403	
+6	2011-01-06	SO2	8.633333	
+
+6 rows
+
+
+------------------------------------------------------------------------
+
+
+    PART III – MERGING EVERYTHING
+
+|df_weather<-as.data.frame(read_excel('../Desktop/weather.xlsx'))
+
+
+df_weather$date<-as_date(df_weather$date)
+df_weather<-df_weather[, c('date','temp_avg', 'precipitation', 'wind_avg_speed')]
+
+
+df_weather<-melt(df_weather, id.vars='date')
+
+
+names(df_daily)<-names(df_weather)
+df_long<-rbind(df_daily, df_weather)
+
+
+df_wide<-dcast(df_long, formula(date~variable))|
+
+
+------------------------------------------------------------------------
+
+
+    PART IV – ANALYSIS
+
+First, looking evolution over time
+
+|p1 <- ggplot(df_wide, aes(x = date, y = NO2)) + geom_point() + 
+  ggtitle('NO2') + ylab('') + xlab('')
+
+p2 <- ggplot(df_wide, aes(x = date, y = SO2)) + geom_point() +
+  ggtitle('SO2') + ylab('') + xlab('')
+
+p3 <- ggplot(df_wide, aes(x = date, y = PM2.5)) + geom_point() + 
+  ggtitle('PM2.5') + ylab('') + xlab('')
+
+p4 <- ggplot(df_wide, aes(x = date, y = O3)) + geom_point() + 
+  ggtitle('O3') + ylab('') + xlab('')
+
+grid.arrange(p1, p2, p3, p4, ncol = 1)|
+
+|w1 <- ggplot(df_wide, aes(x=date, y=temp_avg)) + geom_point() +
+  ggtitle('temp_avg')+ylab('')+xlab('')
+
+w2 <- ggplot(df_wide, aes(x=date, y=precipitation)) + geom_point() +
+  ggtitle('precipitation')+ylab('')+xlab('')
+
+w3 <- ggplot(df_wide, aes(x=date, y=wind_avg_speed)) + geom_point() +
+  ggtitle('wind_avg_speed')+ylab('')+xlab('')
+
+grid.arrange(w1, w2, w3, ncol=1)|
+
+
+Finally, looking at correlation
+
+|ggpairs(df_wide[,2:ncol(df_wide)])|
+
+
+------------------------------------------------------------------------
+
+
+    PART IV – REGRESSION
+
+First, trying all variables
+
+|LM_1 <- with(df_wide,
+             lm(NO2 ~ O3 + PM2.5 + SO2 + temp_avg + precipitation + wind_avg_speed))
+
+summary(LM_1)$coefficients|
+
+|##                   Estimate Std. Error    t value      Pr(>|t|)
+## (Intercept)    37.65236088 1.00067243  37.627059 8.562455e-239
+## O3             -0.30006239 0.01170922 -25.626156 1.045511e-126
+## PM2.5           0.94283882 0.03946767  23.888893 3.934914e-112
+## SO2             1.94736904 0.08103588  24.030949 2.659265e-113
+## temp_avg        0.04181274 0.03306868   1.264421  2.062152e-01
+## precipitation  -0.14949032 0.05284544  -2.828822  4.715036e-03
+## wind_avg_speed -0.67865388 0.03764803 -18.026279  8.640738e-68|
+
+|summary(LM_1)$r.squared|
+
+|## [1] 0.8003908|
+
+
+Looking at the residuals
+
+|ggplot(LM_1, aes(x=residuals(LM_1))) + geom_histogram() + 
+  ylab('')+xlab('')|
+
+
+After removing O3 (Multicollinearity) and Precipitation (Insignificance)
+and using logs for a better fit
+
+|LM_2 <- with(df_wide, lm(
+  NO2 ~ log1p(PM2.5) + log1p(SO2) + log1p(temp_avg) + log1p(wind_avg_speed)))
+
+
+summary(LM_2)$coefficients|
+
+|##                         Estimate Std. Error    t value      Pr(>|t|)
+## (Intercept)            16.208966  2.7708700   5.849775  5.670923e-09
+## log1p(PM2.5)           18.631222  0.5547769  33.583268 2.137934e-199
+## log1p(SO2)             11.945388  0.6098062  19.588827  8.575697e-79
+## log1p(temp_avg)        -7.490235  0.3508105 -21.351228  5.998939e-92
+## log1p(wind_avg_speed) -10.686241  0.5188665 -20.595359  3.258645e-86|
+
+|summary(LM_2)$r.squared|
+
+|## [1] 0.7569114|
+
+
+Another look at the residuals
+
+|ggplot(LM_2, aes(x=residuals(LM_2))) + geom_histogram() + 
+  ylab('')+xlab('')|
+
